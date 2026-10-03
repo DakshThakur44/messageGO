@@ -1,0 +1,118 @@
+openapi: 3.1.0
+info:
+  title: MessageGO WebSocket Real-Time Chat API
+  version: 1.0.0
+  description: |
+    Specification for the Go offline-first real-time chat backend.
+    Establishes persistent WebSocket connections over `/ws?user_id={id}` and exchanges JSON-encoded `Envelope` transport frames.
+servers:
+  - url: http://localhost:8080
+    description: Local Development HTTP Server
+  - url: ws://localhost:8080
+    description: Local Development WebSocket Server
+
+paths:
+  /ws:
+    get:
+      summary: Establish WebSocket Connection
+      description: |
+        Upgrades an incoming HTTP GET request to a persistent WebSocket protocol session.
+        Requires a valid `user_id` query parameter to authenticate and bind the connection socket to the central Hub.
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          description: Unique string identifier for the connecting user client.
+          schema:
+            type: string
+          example: "alice"
+      responses:
+        '101':
+          description: Protocol upgraded successfully to WebSocket.
+        '400':
+          description: Connection rejected due to missing or empty `user_id` query parameter.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Missing required 'user_id' query parameter"
+
+components:
+  schemas:
+    Envelope:
+      type: object
+      required:
+        - type
+        - data
+      properties:
+        type:
+          type: string
+          enum: [chat, ack]
+          description: Payload type discriminator indicating how the inner `data` JSON is structured.
+          example: "chat"
+        data:
+          type: object
+          description: Raw JSON payload object corresponding to the specified envelope `type`.
+          oneOf:
+            - $ref: '#/components/schemas/Message'
+            - $ref: '#/components/schemas/DeliveryACK'
+      example:
+        type: "chat"
+        data:
+          id: "550e8400-e29b-41d4-a716-446655440000"
+          sender_id: "alice"
+          recipient_id: "bob"
+          content: "Hello Bob!"
+
+    Message:
+      type: object
+      required:
+        - id
+        - sender_id
+        - recipient_id
+        - content
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Deterministic UUID generated client-side before transmission for deduplication and offline status tracking.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        sender_id:
+          type: string
+          description: User ID of the message author.
+          example: "alice"
+        recipient_id:
+          type: string
+          description: User ID of the destination recipient.
+          example: "bob"
+        content:
+          type: string
+          description: Text payload of the message.
+          example: "Hello Bob!"
+
+    DeliveryACK:
+      type: object
+      required:
+        - message_id
+        - sender_id
+        - recipient_id
+        - status
+      properties:
+        message_id:
+          type: string
+          format: uuid
+          description: UUID matching the original `Message.id` being acknowledged.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        sender_id:
+          type: string
+          description: User ID of the original message sender.
+          example: "alice"
+        recipient_id:
+          type: string
+          description: User ID acknowledging receipt of the message.
+          example: "bob"
+        status:
+          type: string
+          enum: [DELIVERED, READ]
+          description: Delivery confirmation status.
+          example: "DELIVERED"
