@@ -77,8 +77,8 @@ func (h *Hub) registerClient(client *Client) {
 
 	h.RenewPresence(client.UserID)
 
-	// Flush and deliver queued offline envelopes from Redis
-	go h.flushOfflineQueue(client)
+	// Fetch & deliver all undelivered messages from PostgreSQL
+	go h.flushOfflineMessages(client)
 }
 
 func (h *Hub) unregisterClient(client *Client) {
@@ -236,13 +236,13 @@ func (h *Hub) handleChatMessage(ctx context.Context, sender *Client, data json.R
 
 	msgData, _ := json.Marshal(msg)
 	outboundEnv := &models.Envelope{Type: "chat", Data: msgData}
-
 	for _, participantID := range participants {
 		if participantID == sender.UserID {
 			continue // Sender already received server_ack
 		}
-		// Deliver to all active sockets of the recipient
-		h.sendToUser(participantID, outboundEnv)
+		if h.sendToUser(participantID, outboundEnv) {
+			_ = h.db.UpdateDeliveryCursor(ctx, convID, participantID, msg.SeqID)
+		}
 	}
 }
 
@@ -358,28 +358,34 @@ func (h *Hub) handlePresenceQuery(ctx context.Context, client *Client, data json
 	}
 }
 
-// flushOfflineQueue drains queued envelopes from Redis and delivers them to the newly connected client
-func (h *Hub) flushOfflineQueue(client *Client) {
+// flushOfflineMessages restores complete conversation history and missed messages from Postgres upon connection
+func (h *Hub) flushOfflineMessages(client *Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	envelopes, err := h.redis.GetAndFlushOfflineQueue(ctx, client.UserID)
+	// 1. Stream complete conversation history from Postgres so reconnecting clients see previous + queued messages
+	history, err := h.db.GetUserConversationHistory(ctx, client.UserID, 100)
 	if err != nil {
-		log.Printf("[HUB] Failed to drain offline queue for %s: %v", client.UserID, err)
-		return
-	}
-
-	for _, env := range envelopes {
-		select {
-		case client.Send <- env:
-		default:
-			log.Printf("[HUB] Buffer full during offline message flush for %s", client.UserID)
+		log.Printf("[HUB] Failed to fetch conversation history from Postgres for %s: %v", client.UserID, err)
+	} else if len(history) > 0 {
+		log.Printf("[HUB] Streaming %d history messages from Postgres to %s", len(history), client.UserID)
+		for _, msg := range history {
+			msgData, _ := json.Marshal(msg)
+			select {
+			case client.Send <- &models.Envelope{Type: "chat", Data: msgData}:
+				_ = h.db.UpdateDeliveryCursor(ctx, msg.ConversationID, client.UserID, msg.SeqID)
+			default:
+				log.Printf("[HUB] Buffer full streaming history message %d to %s", msg.SeqID, client.UserID)
+			}
 		}
 	}
+
+	// 2. Drain any transient Redis queue items
+	_, _ = h.redis.GetAndFlushOfflineQueue(ctx, client.UserID)
 }
 
-// sendToUser delivers an envelope to active sockets, or enqueues to Redis if offline
-func (h *Hub) sendToUser(userID string, env *models.Envelope) {
+// sendToUser delivers an envelope to active sockets, or enqueues to Redis if offline. Returns true if delivered.
+func (h *Hub) sendToUser(userID string, env *models.Envelope) bool {
 	h.mu.RLock()
 	conns, exists := h.clients[userID]
 	if !exists || len(conns) == 0 {
@@ -392,12 +398,14 @@ func (h *Hub) sendToUser(userID string, env *models.Envelope) {
 				log.Printf("[HUB] Failed to enqueue offline envelope for %s: %v", userID, err)
 			}
 		}()
-		return
+		return false
 	}
 
+	delivered := false
 	for client := range conns {
 		select {
 		case client.Send <- env:
+			delivered = true
 		default:
 			log.Printf("[HUB] Buffer full for user %s. Evicting slow socket.", userID)
 			go func(c *Client) {
@@ -406,4 +414,5 @@ func (h *Hub) sendToUser(userID string, env *models.Envelope) {
 		}
 	}
 	h.mu.RUnlock()
+	return delivered
 }

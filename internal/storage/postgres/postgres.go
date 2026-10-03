@@ -214,3 +214,84 @@ func (d *DB) GetConversationParticipants(ctx context.Context, convID string) ([]
 	}
 	return participants, nil
 }
+
+// GetUndeliveredMessages returns all messages across conversations with seq_id > last_delivered_seq_id
+func (d *DB) GetUndeliveredMessages(ctx context.Context, userID string) ([]*models.Message, error) {
+	query := `
+		SELECT m.id, m.conversation_id, m.seq_id, m.sender_id, m.client_msg_id, m.content_type, m.content, m.created_at
+		FROM messages m
+		JOIN conversation_participants cp ON cp.conversation_id = m.conversation_id
+		WHERE cp.user_id = $1 
+		  AND m.seq_id > cp.last_delivered_seq_id 
+		  AND m.sender_id != $1
+		ORDER BY m.seq_id ASC;
+	`
+
+	rows, err := d.pool.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query undelivered messages: %w", err)
+	}
+	defer rows.Close()
+
+	messages := make([]*models.Message, 0)
+	for rows.Next() {
+		var m models.Message
+		if err := rows.Scan(
+			&m.ID,
+			&m.ConversationID,
+			&m.SeqID,
+			&m.SenderID,
+			&m.ClientMsgID,
+			&m.ContentType,
+			&m.Content,
+			&m.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		messages = append(messages, &m)
+	}
+
+	return messages, nil
+}
+
+// GetUserConversationHistory returns recent messages across all conversations for a user
+func (d *DB) GetUserConversationHistory(ctx context.Context, userID string, limit int) ([]*models.Message, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+
+	query := `
+		SELECT m.id, m.conversation_id, m.seq_id, m.sender_id, m.client_msg_id, m.content_type, m.content, m.created_at
+		FROM messages m
+		JOIN conversation_participants cp ON cp.conversation_id = m.conversation_id
+		WHERE cp.user_id = $1
+		ORDER BY m.created_at ASC, m.seq_id ASC
+		LIMIT $2;
+	`
+
+	rows, err := d.pool.QueryContext(ctx, query, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query conversation history: %w", err)
+	}
+	defer rows.Close()
+
+	messages := make([]*models.Message, 0)
+	for rows.Next() {
+		var m models.Message
+		if err := rows.Scan(
+			&m.ID,
+			&m.ConversationID,
+			&m.SeqID,
+			&m.SenderID,
+			&m.ClientMsgID,
+			&m.ContentType,
+			&m.Content,
+			&m.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		messages = append(messages, &m)
+	}
+
+	return messages, nil
+}
