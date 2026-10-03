@@ -1,0 +1,10 @@
+# Use this workspace to collaborate
+workspace:
+  id: a7a4cc7c-cdf1-4969-bd94-2522db1e22fa
+
+localResources:
+  collections:
+    - ../auth_service/docs/postman_collection.json
+  specs:
+    - ../openapi.yaml
+    - ../auth_service/docs/openapi.json
