@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 
 	"messageGO/internal/models"
 	"messageGO/internal/storage/postgres"
@@ -13,8 +16,11 @@ import (
 )
 
 type Hub struct {
-	// UserID -> Set of active client socket connections (supports multi-device/tabs)
+	// UserID -> Set of active client socket connections (multi-device/tabs)
 	clients map[string]map[*Client]struct{}
+
+	// Aliases map: lowercase handle / email / ID -> primary UserID
+	aliases map[string]string
 
 	register   chan *Client
 	unregister chan *Client
@@ -28,6 +34,7 @@ type Hub struct {
 func NewHub(db *postgres.DB, redisClient *redis.Client) *Hub {
 	return &Hub{
 		clients:    make(map[string]map[*Client]struct{}),
+		aliases:    make(map[string]string),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		db:         db,
@@ -53,11 +60,21 @@ func (h *Hub) registerClient(client *Client) {
 		h.clients[client.UserID] = make(map[*Client]struct{})
 	}
 	h.clients[client.UserID][client] = struct{}{}
+
+	// Register aliases (case-insensitive)
+	h.aliases[strings.ToLower(client.UserID)] = client.UserID
+	if client.Email != "" {
+		h.aliases[strings.ToLower(client.Email)] = client.UserID
+	}
+	if client.Username != "" {
+		h.aliases[strings.ToLower(client.Username)] = client.UserID
+	}
+	activeSockets := len(h.clients[client.UserID])
 	h.mu.Unlock()
 
-	log.Printf("[HUB] User connected: %s (active sockets: %d)", client.UserID, len(h.clients[client.UserID]))
+	log.Printf("[HUB] Connected: ID=%s (email=%s, handle=%s) | active sockets=%d",
+		client.UserID, client.Email, client.Username, activeSockets)
 
-	// Mark user online in Redis with 60s TTL
 	h.RenewPresence(client.UserID)
 }
 
@@ -68,7 +85,6 @@ func (h *Hub) unregisterClient(client *Client) {
 		close(client.Send)
 		if len(conns) == 0 {
 			delete(h.clients, client.UserID)
-			// User has no remaining sockets -> Remove from Redis presence
 			go func(uid string) {
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
@@ -100,6 +116,20 @@ func (h *Hub) RenewPresence(userID string) {
 	}()
 }
 
+// resolveUserID converts username/email alias into the canonical primary UserID
+func (h *Hub) resolveUserID(target string) string {
+	target = strings.TrimSpace(strings.ToLower(target))
+	if target == "" {
+		return ""
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if id, ok := h.aliases[target]; ok {
+		return id
+	}
+	return target
+}
+
 // HandleIncomingEnvelope processes frames dispatched from client ReadPump
 func (h *Hub) HandleIncomingEnvelope(client *Client, env *models.Envelope) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -123,44 +153,70 @@ func (h *Hub) HandleIncomingEnvelope(client *Client, env *models.Envelope) {
 
 	default:
 		log.Printf("[HUB] Unknown envelope type received: %s from %s", env.Type, client.UserID)
+		client.sendError("UNKNOWN_TYPE", "Unrecognized envelope type: "+env.Type)
 	}
 }
 
 func (h *Hub) handleChatMessage(ctx context.Context, sender *Client, data json.RawMessage) {
 	var inbound models.InboundChatMessage
 	if err := json.Unmarshal(data, &inbound); err != nil {
-		sender.sendError("BAD_PAYLOAD", "Invalid chat payload")
+		sender.sendError("BAD_PAYLOAD", "Invalid chat payload JSON")
 		return
 	}
 
-	convID := inbound.ConversationID
-	// If conversation ID is omitted in 1:1 chat, find or create conversation between sender & recipient
-	if convID == "" && inbound.RecipientID != "" {
+	convID := strings.TrimSpace(inbound.ConversationID)
+	rawRecipient := strings.TrimSpace(inbound.RecipientID)
+
+	var recipientID string
+	if rawRecipient != "" {
+		recipientID = h.resolveUserID(rawRecipient)
+	}
+
+	// Validation 1: Prevent messaging self
+	if recipientID != "" && (recipientID == sender.UserID || (sender.Username != "" && strings.EqualFold(rawRecipient, sender.Username))) {
+		sender.sendError("CANNOT_MESSAGE_SELF", "Cannot send direct message to yourself")
+		return
+	}
+
+	// Validation 2: If conversation ID is missing, resolve or create 1:1 conversation
+	if convID == "" {
+		if recipientID == "" {
+			sender.sendError("MISSING_TARGET", "Either conversation_id or valid recipient_id (handle/email/id) is required")
+			return
+		}
+
 		var err error
-		convID, err = h.db.EnsureDirectConversation(ctx, sender.UserID, inbound.RecipientID)
+		convID, err = h.db.EnsureDirectConversation(ctx, sender.UserID, recipientID)
 		if err != nil {
-			log.Printf("[HUB] Failed to ensure conversation: %v", err)
+			log.Printf("[HUB] Failed to ensure conversation between %s and %s: %v", sender.UserID, recipientID, err)
 			sender.sendError("DB_ERROR", "Failed to resolve conversation")
 			return
 		}
 	}
 
-	if convID == "" {
-		sender.sendError("MISSING_TARGET", "Either conversation_id or recipient_id is required")
-		return
+	clientMsgID := strings.TrimSpace(inbound.ClientMsgID)
+	if clientMsgID == "" {
+		clientMsgID = uuid.New().String()
+	}
+
+	contentType := inbound.ContentType
+	if contentType == "" {
+		contentType = "text"
 	}
 
 	// 1. Atomic sequence assignment and database insertion
-	msg, err := h.db.SaveMessageAtomic(ctx, convID, sender.UserID, inbound.ClientMsgID, inbound.ContentType, inbound.Content)
+	msg, err := h.db.SaveMessageAtomic(ctx, convID, sender.UserID, clientMsgID, contentType, inbound.Content)
 	if err != nil {
 		log.Printf("[HUB] Failed to save message atomically: %v", err)
 		sender.sendError("PERSIST_ERROR", "Failed to persist message")
 		return
 	}
 
+	log.Printf("[HUB] Message saved [conv=%s, seq=%d, sender=%s (%s)]", convID, msg.SeqID, sender.UserID, sender.Username)
+
 	// 2. Deliver Server ACK immediately back to sender
 	serverAckData, _ := json.Marshal(models.ServerACK{
-		ClientMsgID:    inbound.ClientMsgID,
+		ClientMsgID:    clientMsgID,
 		MessageID:      msg.ID,
 		ConversationID: convID,
 		SeqID:          msg.SeqID,
@@ -180,7 +236,7 @@ func (h *Hub) handleChatMessage(ctx context.Context, sender *Client, data json.R
 
 	for _, participantID := range participants {
 		if participantID == sender.UserID {
-			continue // Already acknowledged to sender
+			continue // Sender already received server_ack
 		}
 		// Deliver to all active sockets of the recipient
 		h.sendToUser(participantID, outboundEnv)
@@ -196,12 +252,13 @@ func (h *Hub) handleDeliveryACK(ctx context.Context, client *Client, data json.R
 	ack.RecipientID = client.UserID
 	ack.Timestamp = time.Now()
 
-	// Update delivery watermark in PostgreSQL
 	_ = h.db.UpdateDeliveryCursor(ctx, ack.ConversationID, client.UserID, ack.SeqID)
 
-	// Forward delivery notification to the sender
-	ackData, _ := json.Marshal(ack)
-	h.sendToUser(ack.SenderID, &models.Envelope{Type: "delivery_ack", Data: ackData})
+	targetSenderID := h.resolveUserID(ack.SenderID)
+	if targetSenderID != "" {
+		ackData, _ := json.Marshal(ack)
+		h.sendToUser(targetSenderID, &models.Envelope{Type: "delivery_ack", Data: ackData})
+	}
 }
 
 func (h *Hub) handleReadACK(ctx context.Context, client *Client, data json.RawMessage) {
@@ -213,12 +270,13 @@ func (h *Hub) handleReadACK(ctx context.Context, client *Client, data json.RawMe
 	ack.ReaderID = client.UserID
 	ack.Timestamp = time.Now()
 
-	// Update read watermark in PostgreSQL
 	_ = h.db.UpdateReadCursor(ctx, ack.ConversationID, client.UserID, ack.SeqID)
 
-	// Forward read receipt notification to the sender
-	ackData, _ := json.Marshal(ack)
-	h.sendToUser(ack.SenderID, &models.Envelope{Type: "read_ack", Data: ackData})
+	targetSenderID := h.resolveUserID(ack.SenderID)
+	if targetSenderID != "" {
+		ackData, _ := json.Marshal(ack)
+		h.sendToUser(targetSenderID, &models.Envelope{Type: "read_ack", Data: ackData})
+	}
 }
 
 func (h *Hub) handleSyncRequest(ctx context.Context, client *Client, data json.RawMessage) {
@@ -262,7 +320,8 @@ func (h *Hub) handlePresenceQuery(ctx context.Context, client *Client, data json
 		return
 	}
 
-	online, err := h.redis.IsOnline(ctx, query.TargetUserID)
+	targetID := h.resolveUserID(query.TargetUserID)
+	online, err := h.redis.IsOnline(ctx, targetID)
 	status := "offline"
 	if err == nil && online {
 		status = "online"
@@ -292,7 +351,7 @@ func (h *Hub) sendToUser(userID string, env *models.Envelope) {
 		select {
 		case client.Send <- env:
 		default:
-			log.Printf("[HUB] Buffer full for socket of user %s. Evicting slow socket.", userID)
+			log.Printf("[HUB] Buffer full for user %s. Evicting slow socket.", userID)
 			go func(c *Client) {
 				h.Unregister(c)
 			}(client)

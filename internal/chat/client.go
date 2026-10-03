@@ -19,18 +19,22 @@ const (
 
 // Client represents a single active WebSocket socket connection
 type Client struct {
-	UserID string
-	hub    *Hub
-	conn   *websocket.Conn
-	Send   chan *models.Envelope
+	UserID   string
+	Email    string
+	Username string
+	hub      *Hub
+	conn     *websocket.Conn
+	Send     chan *models.Envelope
 }
 
-func NewClient(userID string, hub *Hub, conn *websocket.Conn) *Client {
+func NewClient(userID, email, username string, hub *Hub, conn *websocket.Conn) *Client {
 	return &Client{
-		UserID: userID,
-		hub:    hub,
-		conn:   conn,
-		Send:   make(chan *models.Envelope, 256),
+		UserID:   userID,
+		Email:    email,
+		Username: username,
+		hub:      hub,
+		conn:     conn,
+		Send:     make(chan *models.Envelope, 256),
 	}
 }
 
@@ -54,7 +58,7 @@ func (c *Client) ReadPump() {
 		_, bytes, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("[CLIENT] Disconnect for user %s: %v", c.UserID, err)
+				log.Printf("[CLIENT] Disconnect for user %s (%s): %v", c.UserID, c.Username, err)
 			}
 			break
 		}

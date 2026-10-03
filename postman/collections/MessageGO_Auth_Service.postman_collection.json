@@ -1,0 +1,535 @@
+{
+	"info": {
+		"_postman_id": "b9f2c1d3-4e8a-4a5e-9f3b-8c7a6e5d4c3b",
+		"name": "MessageGO Authentication API",
+		"description": "Comprehensive Postman collection for MessageGO Authentication Service (Go + Gin + MongoDB) and Chat Gateway integration.\n\nPre-configured with test users:\n- Daksh Thakur (daksh@hsm.tf)\n- Chetan Fale (chetan@hsm.tf)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. User - Daksh Thakur",
+			"item": [
+				{
+					"name": "Register - Daksh Thakur",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{daksh_email}}\",\n  \"password\": \"{{daksh_password}}\",\n  \"first_name\": \"Daksh\",\n  \"last_name\": \"Thakur\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/register",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"register"
+							]
+						},
+						"description": "Registers Daksh Thakur in MongoDB."
+					},
+					"response": []
+				},
+				{
+					"name": "Login - Daksh Thakur",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.success && jsonData.data) {",
+									"    if (jsonData.data.access_token) {",
+									"        pm.collectionVariables.set('access_token', jsonData.data.access_token);",
+									"        pm.environment.set('access_token', jsonData.data.access_token);",
+									"        pm.globals.set('access_token', jsonData.data.access_token);",
+									"    }",
+									"    if (jsonData.data.refresh_token) {",
+									"        pm.collectionVariables.set('refresh_token', jsonData.data.refresh_token);",
+									"        pm.environment.set('refresh_token', jsonData.data.refresh_token);",
+									"        pm.globals.set('refresh_token', jsonData.data.refresh_token);",
+									"    }",
+									"}",
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"pm.test('Response contains tokens', function () {",
+									"    pm.expect(jsonData.data.access_token).to.be.a('string');",
+									"    pm.expect(jsonData.data.refresh_token).to.be.a('string');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{daksh_email}}\",\n  \"password\": \"{{daksh_password}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"login"
+							]
+						},
+						"description": "Authenticates Daksh Thakur and automatically stores access_token and refresh_token in variables."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Profile (Me) - Daksh",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/me",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"me"
+							]
+						},
+						"description": "Retrieves the user profile for the authenticated token."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. User - Chetan Fale",
+			"item": [
+				{
+					"name": "Register - Chetan Fale",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{chetan_email}}\",\n  \"password\": \"{{chetan_password}}\",\n  \"first_name\": \"Chetan\",\n  \"last_name\": \"Fale\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/register",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"register"
+							]
+						},
+						"description": "Registers Chetan Fale (chetan@hsm.tf) in MongoDB."
+					},
+					"response": []
+				},
+				{
+					"name": "Login - Chetan Fale",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.success && jsonData.data) {",
+									"    if (jsonData.data.access_token) {",
+									"        pm.collectionVariables.set('access_token', jsonData.data.access_token);",
+									"        pm.environment.set('access_token', jsonData.data.access_token);",
+									"        pm.globals.set('access_token', jsonData.data.access_token);",
+									"    }",
+									"    if (jsonData.data.refresh_token) {",
+									"        pm.collectionVariables.set('refresh_token', jsonData.data.refresh_token);",
+									"        pm.environment.set('refresh_token', jsonData.data.refresh_token);",
+									"        pm.globals.set('refresh_token', jsonData.data.refresh_token);",
+									"    }",
+									"}",
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"pm.test('Response contains tokens', function () {",
+									"    pm.expect(jsonData.data.access_token).to.be.a('string');",
+									"    pm.expect(jsonData.data.refresh_token).to.be.a('string');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{chetan_email}}\",\n  \"password\": \"{{chetan_password}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"login"
+							]
+						},
+						"description": "Authenticates Chetan Fale and automatically stores access_token and refresh_token in variables."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Profile (Me) - Chetan",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/me",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"me"
+							]
+						},
+						"description": "Retrieves the user profile for the authenticated token."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. Token Management & Sessions",
+			"item": [
+				{
+					"name": "Refresh Access Token (Rotation)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.success && jsonData.data) {",
+									"    if (jsonData.data.access_token) {",
+									"        pm.collectionVariables.set('access_token', jsonData.data.access_token);",
+									"        pm.environment.set('access_token', jsonData.data.access_token);",
+									"        pm.globals.set('access_token', jsonData.data.access_token);",
+									"    }",
+									"    if (jsonData.data.refresh_token) {",
+									"        pm.collectionVariables.set('refresh_token', jsonData.data.refresh_token);",
+									"        pm.environment.set('refresh_token', jsonData.data.refresh_token);",
+									"        pm.globals.set('refresh_token', jsonData.data.refresh_token);",
+									"    }",
+									"}",
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/refresh",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"refresh"
+							]
+						},
+						"description": "Exchanges an existing Refresh Token for a new pair of Access and Refresh tokens (Token Rotation)."
+					},
+					"response": []
+				},
+				{
+					"name": "Logout (Revoke Session)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/logout",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"logout"
+							]
+						},
+						"description": "Revokes current refresh token session and blacklists the active Access Token."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "4. Password Management",
+			"item": [
+				{
+					"name": "Forgot Password",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.success && jsonData.data && jsonData.data.reset_token) {",
+									"    pm.collectionVariables.set('reset_token', jsonData.data.reset_token);",
+									"    pm.environment.set('reset_token', jsonData.data.reset_token);",
+									"    pm.globals.set('reset_token', jsonData.data.reset_token);",
+									"}",
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{chetan_email}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/forgot-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"forgot-password"
+							]
+						},
+						"description": "Requests a password reset token for the specified user email."
+					},
+					"response": []
+				},
+				{
+					"name": "Reset Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"token\": \"{{reset_token}}\",\n  \"new_password\": \"NewSecretPassword123!\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/reset-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"reset-password"
+							]
+						},
+						"description": "Resets the password using a valid single-use reset token."
+					},
+					"response": []
+				},
+				{
+					"name": "Change Password (Logged In)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"old_password\": \"{{chetan_password}}\",\n  \"new_password\": \"ChetanNewPassword123!\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/change-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"change-password"
+							]
+						},
+						"description": "Allows an authenticated user to change their password."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "5. MessageGO Chat Gateway (Port 8080)",
+			"item": [
+				{
+					"name": "Chat Gateway Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{chatUrl}}/health",
+							"host": [
+								"{{chatUrl}}"
+							],
+							"path": [
+								"health"
+							]
+						},
+						"description": "Checks the health of the MessageGO Chat Gateway server on port 8080."
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8081",
+			"type": "string"
+		},
+		{
+			"key": "chatUrl",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "daksh_email",
+			"value": "daksh@hsm.tf",
+			"type": "string"
+		},
+		{
+			"key": "daksh_password",
+			"value": "DakshPassword123!",
+			"type": "string"
+		},
+		{
+			"key": "chetan_email",
+			"value": "chetan@hsm.tf",
+			"type": "string"
+		},
+		{
+			"key": "chetan_password",
+			"value": "ChetanPassword123!",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "refresh_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "reset_token",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

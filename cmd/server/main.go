@@ -105,7 +105,7 @@ func serveWS(cfg *config.Config, hub *chat.Hub, w http.ResponseWriter, r *http.R
 		}
 	}
 
-	var userID string
+	var userID, email, username string
 
 	// 2. Validate token or allow query user_id in development mode as fallback
 	if tokenStr != "" {
@@ -116,9 +116,17 @@ func serveWS(cfg *config.Config, hub *chat.Hub, w http.ResponseWriter, r *http.R
 			return
 		}
 		userID = claims.UserID
+		email = claims.Email
+		if strings.Contains(email, "@") {
+			username = strings.Split(email, "@")[0]
+		} else {
+			username = email
+		}
 	} else if cfg.Env == "development" && r.URL.Query().Get("user_id") != "" {
 		// Dev fallback for quick manual testing without JWT
 		userID = r.URL.Query().Get("user_id")
+		email = userID
+		username = userID
 		log.Printf("[SERVER] Handshake in dev mode for user_id=%s without token", userID)
 	} else {
 		log.Println("[SERVER] Handshake rejected: missing authentication token")
@@ -134,7 +142,7 @@ func serveWS(cfg *config.Config, hub *chat.Hub, w http.ResponseWriter, r *http.R
 	}
 
 	// 4. Create client wrapper and register with Hub
-	client := chat.NewClient(userID, hub, conn)
+	client := chat.NewClient(userID, email, username, hub, conn)
 	hub.Register(client)
 
 	// 5. Spawn read/write pumps
