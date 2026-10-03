@@ -1,4 +1,4 @@
-package chat
+package models
 
 import (
 	"encoding/json"
@@ -12,8 +12,8 @@ type Envelope struct {
 
 type Message struct {
 	ID          string    `json:"id"`
-	SenderId    string    `json:"sender_id"`
-	RecipientId string    `json:"recipient_id"`
+	SenderID    string    `json:"sender_id"`
+	RecipientID string    `json:"recipient_id"`
 	Content     string    `json:"content"`
 	Timestamp   time.Time `json:"timestamp"`
 }
