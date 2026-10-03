@@ -61,7 +61,8 @@ type ReadACK struct {
 
 // SyncRequest is sent by a client to catch up on offline/missed messages
 type SyncRequest struct {
-	ConversationID string `json:"conversation_id"`
+	ConversationID string `json:"conversation_id,omitempty"`
+	RecipientID    string `json:"recipient_id,omitempty"`
 	SinceSeqID     int64  `json:"since_seq_id"`
 	Limit          int    `json:"limit,omitempty"`
 }

@@ -76,6 +76,9 @@ func (h *Hub) registerClient(client *Client) {
 		client.UserID, client.Email, client.Username, activeSockets)
 
 	h.RenewPresence(client.UserID)
+
+	// Flush and deliver queued offline envelopes from Redis
+	go h.flushOfflineQueue(client)
 }
 
 func (h *Hub) unregisterClient(client *Client) {
@@ -286,9 +289,26 @@ func (h *Hub) handleSyncRequest(ctx context.Context, client *Client, data json.R
 		return
 	}
 
-	messages, err := h.db.GetMessagesSince(ctx, req.ConversationID, req.SinceSeqID, req.Limit)
+	convID := strings.TrimSpace(req.ConversationID)
+	if convID == "" && req.RecipientID != "" {
+		targetID := h.resolveUserID(req.RecipientID)
+		if targetID != "" {
+			var err error
+			convID, err = h.db.EnsureDirectConversation(ctx, client.UserID, targetID)
+			if err != nil {
+				log.Printf("[HUB] Sync conversation resolution failed: %v", err)
+			}
+		}
+	}
+
+	if convID == "" {
+		client.sendError("BAD_SYNC_REQUEST", "conversation_id or recipient_id is required")
+		return
+	}
+
+	messages, err := h.db.GetMessagesSince(ctx, convID, req.SinceSeqID, req.Limit)
 	if err != nil {
-		log.Printf("[HUB] Sync query failed for %s: %v", req.ConversationID, err)
+		log.Printf("[HUB] Sync query failed for %s: %v", convID, err)
 		client.sendError("SYNC_FAILED", "Failed to retrieve missed messages")
 		return
 	}
@@ -301,7 +321,7 @@ func (h *Hub) handleSyncRequest(ctx context.Context, client *Client, data json.R
 	hasMore := len(messages) == req.Limit && req.Limit > 0
 
 	resData, _ := json.Marshal(models.SyncResponse{
-		ConversationID: req.ConversationID,
+		ConversationID: convID,
 		Messages:       messages,
 		LatestSeqID:    latestSeq,
 		HasMore:        hasMore,
@@ -338,12 +358,40 @@ func (h *Hub) handlePresenceQuery(ctx context.Context, client *Client, data json
 	}
 }
 
-// sendToUser delivers an envelope non-blockingly to all open sockets for a user
+// flushOfflineQueue drains queued envelopes from Redis and delivers them to the newly connected client
+func (h *Hub) flushOfflineQueue(client *Client) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	envelopes, err := h.redis.GetAndFlushOfflineQueue(ctx, client.UserID)
+	if err != nil {
+		log.Printf("[HUB] Failed to drain offline queue for %s: %v", client.UserID, err)
+		return
+	}
+
+	for _, env := range envelopes {
+		select {
+		case client.Send <- env:
+		default:
+			log.Printf("[HUB] Buffer full during offline message flush for %s", client.UserID)
+		}
+	}
+}
+
+// sendToUser delivers an envelope to active sockets, or enqueues to Redis if offline
 func (h *Hub) sendToUser(userID string, env *models.Envelope) {
 	h.mu.RLock()
 	conns, exists := h.clients[userID]
 	if !exists || len(conns) == 0 {
 		h.mu.RUnlock()
+		// Recipient is offline -> persist in Redis offline queue
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if err := h.redis.EnqueueOffline(ctx, userID, env); err != nil {
+				log.Printf("[HUB] Failed to enqueue offline envelope for %s: %v", userID, err)
+			}
+		}()
 		return
 	}
 

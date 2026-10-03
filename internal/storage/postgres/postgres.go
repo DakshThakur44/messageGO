@@ -152,7 +152,7 @@ func (d *DB) GetMessagesSince(ctx context.Context, convID string, sinceSeqID int
 	}
 	defer rows.Close()
 
-	var messages []*models.Message
+	messages := make([]*models.Message, 0)
 	for rows.Next() {
 		var m models.Message
 		if err := rows.Scan(

@@ -60,6 +60,41 @@ func (c *Client) IsOnline(ctx context.Context, userID string) (bool, error) {
 	return val > 0, nil
 }
 
+// EnqueueOffline stores an undelivered envelope in Redis list for offline recipient
+func (c *Client) EnqueueOffline(ctx context.Context, userID string, env *models.Envelope) error {
+	bytes, err := json.Marshal(env)
+	if err != nil {
+		return fmt.Errorf("failed to marshal envelope for offline queue: %w", err)
+	}
+	key := fmt.Sprintf("offline:%s", userID)
+	return c.rdb.RPush(ctx, key, bytes).Err()
+}
+
+// GetAndFlushOfflineQueue atomically retrieves and drains all queued offline envelopes for a user
+func (c *Client) GetAndFlushOfflineQueue(ctx context.Context, userID string) ([]*models.Envelope, error) {
+	key := fmt.Sprintf("offline:%s", userID)
+	pipe := c.rdb.TxPipeline()
+	lrangeCmd := pipe.LRange(ctx, key, 0, -1)
+	pipe.Del(ctx, key)
+	if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
+		return nil, err
+	}
+
+	rawItems := lrangeCmd.Val()
+	if len(rawItems) == 0 {
+		return nil, nil
+	}
+
+	envelopes := make([]*models.Envelope, 0, len(rawItems))
+	for _, item := range rawItems {
+		var env models.Envelope
+		if err := json.Unmarshal([]byte(item), &env); err == nil {
+			envelopes = append(envelopes, &env)
+		}
+	}
+	return envelopes, nil
+}
+
 // PublishEnvelope broadcasts an envelope over a Redis Pub/Sub channel
 func (c *Client) PublishEnvelope(ctx context.Context, channel string, env *models.Envelope) error {
 	bytes, err := json.Marshal(env)
