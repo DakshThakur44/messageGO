@@ -4,7 +4,7 @@
 
 ```text
                ┌─────────────────────────────────────────┐
-               │         Client (Postman/Frontend)       │
+               │       Client (Postman/Frontend)         │
                └────────────────────┬────────────────────┘
                                     │ WebSocket Protocol
                                     ▼
@@ -35,7 +35,7 @@
                         Recipient Online / Offline Check
                                       │
                    ┌──────────────────┴──────────────────┐
-        Recipient Online?                               Recipient Offline?
+        Recipient Online?                         Recipient Offline?
                    │                                     │
                    ▼                                     ▼
         Deliver via client.Send                     Persist to Store
